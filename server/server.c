@@ -1,58 +1,63 @@
-#include <stdio.h>
-#include <libwebsockets.h>
-#include <string.h>
-#include <arpa/inet.h>
-#include <cjson/cJSON.h>
-#include <sqlite3.h>
-#include <openssl/aes.h>
-#include <openssl/evp.h>
-#include <time.h>
-#include <stdlib.h>
-#include "constants.h"
-#include "crypt.h"
-#include "respone.h"
-#include "database.h"
-#include "server_callback.h"
+#include "lib.h"
+
+int server_sock;
+
+void sig_int(int signo) {
+    close(server_sock);
+    exit(EXIT_SUCCESS);
+}
 
 int main()
 {
-    struct lws_context *context;
-    struct lws_context_creation_info info;
-    const char *iface = NULL;
-    struct lws_protocols protocols[] = {
-        {"echo-protocol", callback, 0, 0},
-        {NULL, NULL, 0, 0}};
+    signal(SIGINT, sig_int);
 
-    memset(&info, 0, sizeof(info));
-    info.port = PORT;
-    info.iface = iface;
-    info.protocols = protocols;
-    info.gid = -1;
-    info.uid = -1;
+    struct sockaddr_in server;
+    struct sockaddr_in client;
+    int sin_size = sizeof(struct sockaddr_in);
 
-    context = lws_create_context(&info);
-    if (!context)
-    {
-        fprintf(stderr, "libwebsocket init failed\n");
-        return -1;
+    // Create socket
+    if ((server_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {  /* calls socket() */
+        perror("\nError: ");
+        exit(0);
     }
 
-    printf("Server running on port %d\n", PORT);
+    server.sin_family = AF_INET;
+    server.sin_port = htons(PORT);
+    server.sin_addr.s_addr = INADDR_ANY;
+    bzero(&(server.sin_zero), 8);
 
-    int rc = sqlite3_open_v2(DATABASE_URL, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, "unix-none");
-    if (rc != SQLITE_OK)
-    {
-        fprintf(stderr, "Cannot open database: %s\n", sqlite3_errmsg(db));
-        return -1;
+    // Bind socket
+    if (bind(server_sock, (struct sockaddr *) &server, sizeof(struct sockaddr)) == -1) {
+        perror("\nError: ");
+        exit(0);
     }
 
-    while (1)
-    {
-        lws_service(context, 50);
+    // Listen
+    if (listen(server_sock, BACK_LOG) == -1) {
+        perror("Listening failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("Server running on port %d.\n", PORT);
+
+
+    // Handle clients
+    while (1) {
+        int client_socket = accept(server_sock, (struct sockaddr *) &client, &sin_size);
+        printf("\nYou got connection from %s\n", inet_ntoa(client.sin_addr));
+
+        // Add client to list
+        lock();
+        if(getSize(Clients)==BACK_LOG) printf("Max client connected\n");
+        else addClient(&Clients, createUser(client_socket));
+        unlock();
+
+        // Create new thread to handle each client
+        pthread_t tid;
+        pthread_create(&tid, NULL, client_handler, (void *) &client_socket);
     }
 
-    db_close();
-    lws_context_destroy(context);
+    close(server_sock);
+
 
     return 0;
 }

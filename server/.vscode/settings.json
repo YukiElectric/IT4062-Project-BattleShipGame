@@ -2,7 +2,26 @@
     "files.associations": {
         "iostream": "cpp",
         "sqlite3.h": "c",
-        "aes.h": "c"
+        "aes.h": "c",
+        "evp.h": "c",
+        "inet.h": "c",
+        "time.h": "c",
+        "stdlib.h": "c",
+        "string.h": "c",
+        "libwebsockets.h": "c",
+        "stdio.h": "c",
+        "respone.h": "c",
+        "crypt.h": "c",
+        "constants.h": "c",
+        "database.h": "c",
+        "server_callback.h": "c",
+        "cjson.h": "c",
+        "lib.h": "c",
+        "list.h": "c",
+        "thread.h": "c",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

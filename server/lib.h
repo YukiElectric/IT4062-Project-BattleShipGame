@@ -13,6 +13,10 @@
 #include <openssl/evp.h>
 #include <time.h>
 #include <stdlib.h>
+#include <mysql/mysql.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <time.h>
 #include "constants.h"
 #include "crypt.h"
 #include "respone.h"

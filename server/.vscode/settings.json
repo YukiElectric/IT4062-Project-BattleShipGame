@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "iostream": "cpp",
-        "sqlite3.h": "c",
-        "aes.h": "c"
-    },
-    "C_Cpp.errorSquiggles": "disabled"
-}

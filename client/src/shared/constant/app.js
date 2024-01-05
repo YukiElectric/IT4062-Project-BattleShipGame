@@ -1,1 +1,0 @@
-export const SERVER_ADDR = "ws://localhost:5500";

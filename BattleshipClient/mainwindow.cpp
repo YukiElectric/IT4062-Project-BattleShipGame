@@ -1,9 +1,13 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "listrank.h"
 
 #include <QMessageBox>
 #include <qhostaddress.h>
 #include <cstring>
+#include <QTableWidget>
+#include <QPlainTextEdit>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainWindow) {
     ui->setupUi(this);
@@ -120,6 +124,60 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
                 MainWindow::close();
             }
         } else {
+            QMessageBox::critical(this, "Battleship", "Not connected");
+            MainWindow::close();
+        }
+    });
+    connect(ui->btnShowRank, &QPushButton::clicked, this, [this]() {
+        if(socket) {
+            if(socket->isOpen()) {
+                Request request;
+                request.type = REQUEST_GET_RANK;
+                request.user = current;
+                socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+                qDebug() << "REQUEST_GET_RANK sent";
+            }else {
+                QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+                MainWindow::close();
+            }
+        }else {
+            QMessageBox::critical(this, "Battleship", "Not connected");
+            MainWindow::close();
+        }
+    });
+    connect(ui->btnQuickMatch, &QPushButton::clicked, this, [this]() {
+        QMessageBox msg;
+        msg.setText("Watting to find match ...");
+        QTimer time;
+        int cnt = 0;
+        QObject::connect(&time, &QTimer::timeout, [this, &msg, &cnt]() {
+            msg.setText(QString("Wating in %1 seconds ...").arg(cnt++));
+        });
+        time.start(1000);
+        int result = msg.exec();
+        if(result == QMessageBox::Ok || result == QMessageBox::Cancel) {
+            QMessageBox::information(this, "Test", "test");
+        }
+    });
+    connect(ui->chattxt, &QPlainTextEdit::textChanged, this, [this]() {
+        if(socket) {
+            if(socket->isOpen()) {
+                QString newText = ui->chattxt->toPlainText();
+                if (newText.contains(QChar('\n'))) {
+                    Request request;
+                    request.type = REQUEST_CHAT;
+                    request.user = current;
+                    strcpy(request.message.message, newText.toStdString().c_str());
+                    socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+                    qDebug() << "REQUEST_CHAT sent";
+                    ui->chattxt->clear();
+                    ui->listchat->addItem("You: "+QString(newText));
+                }
+            }else {
+                QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+                MainWindow::close();
+            }
+        }else {
             QMessageBox::critical(this, "Battleship", "Not connected");
             MainWindow::close();
         }
@@ -356,6 +414,14 @@ void MainWindow::handleResponse(QByteArray& bytes) {
         handleGameOver(response, bytes);
         break;
 
+    case REQUEST_GET_RANK:
+        handleGetRank(response, bytes);
+        break;
+
+    case REQUEST_CHAT:
+        handleChat(response, bytes);
+        break;
+
     default:
         break;
     }
@@ -556,6 +622,46 @@ void MainWindow::handleGameOver(const Response& response, QByteArray& bytes) {
         QMessageBox::information(this, "Battleship", "You win!");
     } else {
         QMessageBox::information(this, "Battleship", "You lose!");
+        QMessageBox::StandardButton reply = QMessageBox::question(this, "Battleship", "Do you want to play again with"+QString(match.player2.username), QMessageBox::Yes|QMessageBox::No);
+        if(reply == QMessageBox::Yes) {
+            challengeClick(match.player2);
+            ui->stackedWidget->setCurrentWidget(ui->matchPage);
+            gameManager->init();
+        }
     }
     ui->stackedWidget->setCurrentWidget(ui->mainPage);
+}
+
+void MainWindow::handleGetRank(const Response& response, QByteArray& bytes) {
+    listrank *w = new listrank();
+    if (response.status == STATUS_OK) {
+        size_t size = 0;
+
+        memcpy(&size, bytes.constData(), sizeof(size));
+        bytes = bytes.mid(sizeof(size));
+
+        QTableWidget *table = w->findChild<QTableWidget*>("rank");
+        User user;
+        for (size_t i = 0; i < size; i++) {
+            memcpy(&user, bytes.constData(), sizeof(user));
+            bytes = bytes.mid(sizeof(user));
+            int rowCount = table->rowCount();
+            table->insertRow(rowCount);
+            table->setItem(i,0, new QTableWidgetItem(QString(user.username)));
+            table->setItem(i,1, new QTableWidgetItem(QString::number(user.elo)));
+        }
+        w->setWindowTitle("Rank");
+        w->show();
+    }
+}
+
+void MainWindow::handleChat(const Response& response, QByteArray& bytes) {
+    if (response.status != STATUS_OK) {
+        QMessageBox::warning(this, "Battleship", response.message);
+        return;
+    }
+    Message message;
+    memcpy(&message, bytes.constData(), sizeof(message));
+    bytes = bytes.mid(sizeof(message));
+    ui->listchat->addItem(QString(message.message));
 }

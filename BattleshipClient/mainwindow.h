@@ -46,6 +46,8 @@ private slots:
     void handleReady(const Response& response, QByteArray& bytes);
     void handleShot(const Response& response, QByteArray& bytes);
     void handleGameOver(const Response& response, QByteArray& bytes);
+    void handleGetRank(const Response& response, QByteArray& bytes);
+    void handleChat(const Response& response, QByteArray& bytes);
 
 private:
     Ui::MainWindow* ui;
@@ -56,6 +58,7 @@ private:
     User current;
 
     GameManager* gameManager;
+    bool quickmatch = true;
 };
 
 #endif // !MAINWINDOW_H

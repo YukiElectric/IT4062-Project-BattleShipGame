@@ -13,6 +13,7 @@ SOURCES += \
     boardcell.cpp \
     gamemanager.cpp \
     itemuser.cpp \
+    listrank.cpp \
     main.cpp \
     mainwindow.cpp \
     ship.cpp
@@ -22,12 +23,14 @@ HEADERS += \
     boardcell.h \
     gamemanager.h \
     itemuser.h \
+    listrank.h \
     mainwindow.h \
     ship.h \
     utils.h
 
 FORMS += \
     itemuser.ui \
+    listrank.ui \
     mainwindow.ui
 
 # Default rules for deployment.

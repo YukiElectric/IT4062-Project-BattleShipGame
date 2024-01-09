@@ -9,6 +9,7 @@ struct User {
     char username[255]{};
     char password[255]{};
     int elo{0};
+    // bool quickmatch{false};
 
     User() = default;
 
@@ -51,6 +52,12 @@ struct Match {
     Match() = default;
 };
 
+struct Message {
+    char message[2048]{};
+
+    Message() = default;
+};
+
 enum RequestType {
     REQUEST_NONE,
     REQUEST_SIGN_UP,
@@ -65,6 +72,8 @@ enum RequestType {
     REQUEST_READY,
     REQUEST_SHOT,
     REQUEST_GAME_OVER,
+    REQUEST_GET_RANK,
+    REQUEST_CHAT
 };
 
 enum Status {
@@ -78,6 +87,7 @@ struct Request {
     User user{};
     User user2{};
     Move move{};
+    Message message{};
     int rShips[5]{};
     int cShips[5]{};
     int oriShips[5]{};

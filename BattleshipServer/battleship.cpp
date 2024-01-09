@@ -318,6 +318,35 @@ void handleGetUsers(int clientFd, Request request) {
     cout << clientFd << "> handleGetUsers(): Get users successfully (" << size << ")" << endl;
 }
 
+void handleGetRank(int clientFd, Request request){
+    Response response;
+    response.type = request.type;
+    response.status = Status::STATUS_OK;
+    response.user = request.user;
+    strcpy(response.message, "Get rank successfully!");
+
+    userResults.clear();
+    if(getUsers()!= SQLITE_OK) {
+        cout << clientFd << "> handleGetRank(): An error occurred" << endl;
+        strcpy(response.message, "An error occurred. Please try again");
+        send(clientFd, &response, sizeof(response), 0);
+        return;
+    }
+
+    size_t size = userResults.size();
+    size_t packageSize = sizeof(size_t) + sizeof(response) + sizeof(size) + size * sizeof(User);
+
+    send(clientFd, &packageSize, sizeof(packageSize), 0);
+    send(clientFd, &response, sizeof(response), 0);
+    send(clientFd, &size, sizeof(size), 0);
+
+    for(const auto& user : userResults) {
+        send(clientFd, &user, sizeof(user), 0);
+    }
+
+    cout << clientFd << "> handleGetRank(): Get rank successfully (" << size << ")" << endl;
+}
+
 void handleChallenge(int clientFd, Request request) {
     Response response;
     response.type = request.type;
@@ -666,6 +695,54 @@ void handleReady(int clientFd, Request request) {
     send(clientFd, &response, sizeof(response), 0);
 }
 
+void handleChat(int clientFd, Request request) {
+    Response response;
+    response.type = request.type;
+    response.status = Status::STATUS_OK;
+    response.user = request.user;
+    response.user2 = request.user2;
+    strcpy(response.message, "Sent chat successfully");
+    size_t packageSize = sizeof(size_t) + sizeof(response);
+    int index = -1;
+    for (auto& match : matches) {
+        index++;
+        if (match.player1 == request.user || match.player2 == request.user) {
+            int opponentFd = -1;
+            for (const auto& client : clients) {
+                if (match.player1 == request.user && strcmp(client.second.username, match.player2.username) == 0) {
+                    opponentFd = client.first;
+                    break;
+                }
+                if (match.player2 == request.user && strcmp(client.second.username, match.player1.username) == 0) {
+                    opponentFd = client.first;
+                    break;
+                }
+            }
+
+            if (opponentFd == -1) {
+                cout << clientFd << "> handleChat(): User not found" << endl;
+                response.status = Status::STATUS_ERROR;
+                strcpy(response.message, "User not found!");
+                send(clientFd, &packageSize, sizeof(packageSize), 0);
+                send(clientFd, &response, sizeof(response), 0);
+                return;
+            }
+
+            Message message = request.message;
+
+            packageSize += sizeof(message);
+
+            send(opponentFd, &packageSize, sizeof(packageSize), 0);
+            send(opponentFd, &response, sizeof(response), 0);
+            send(opponentFd, &message, sizeof(message), 0);
+
+            cout << opponentFd << " " << message.message << endl;
+
+            cout << clientFd << "> handleChat(): OK" << endl;
+        }
+    }
+}
+
 void handleShot(int clientFd, Request request) {
     Response response;
     response.type = request.type;
@@ -864,6 +941,14 @@ int main() {
                         case REQUEST_SHOT:
                             handleShot(clientsFd[i], request);
                             break;
+                        
+                        case REQUEST_GET_RANK:
+                            handleGetRank(clientsFd[i], request);
+                            break;
+                        
+                        case REQUEST_CHAT:
+                            handleChat(clientsFd[i], request);
+                            break;
 
                         default:
                             break;
@@ -965,7 +1050,7 @@ int insertUser(const char* username, const char* password) {
 
 int getUsers() {
     sqlite3* db;
-    string sql = "SELECT * FROM Users;";
+    string sql = "SELECT * FROM Users ORDER BY elo DESC;";
 
     try {
         int code;

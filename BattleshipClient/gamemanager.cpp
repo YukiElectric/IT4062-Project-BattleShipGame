@@ -2,7 +2,6 @@
 
 #include <QPen>
 #include <QBrush>
-#include <qdebug.h>
 
 GameManager::GameManager() {
     myTurn = true;
@@ -35,18 +34,28 @@ void GameManager::init() {
     }
 }
 
+void GameManager::clear() {
+    for (int r = 0; r < BOARD_SIZE; r++) {
+        for (int c = 0; c < BOARD_SIZE; c++) {
+            delete myBoard[r][c];
+            delete enemyBoard[r][c];
+        }
+    }
+}
+
 void GameManager::clearShips() {
     for (int i = 0; i < 5; i++) {
         myScene->removeItem(ships[i]);
+        delete ships[i];
     }
 }
 
 void GameManager::onCellClicked(int row, int col) {
+    qDebug() << "onCellClicked():" << row << col << count << myTurn;
+
     if (count > 0 || !myTurn) {
         return;
     }
-
-    qDebug() << "onCellClicked():" << row << col;
 
     curRow = row;
     curCol = col;

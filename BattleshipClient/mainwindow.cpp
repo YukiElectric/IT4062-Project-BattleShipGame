@@ -1,13 +1,17 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "listrank.h"
 
 #include <QMessageBox>
-#include <qhostaddress.h>
-#include <cstring>
 #include <QTableWidget>
 #include <QPlainTextEdit>
 #include <QTimer>
+
+#include <cstring>
+
+#include "itemuser.h"
+#include "itemhistory.h"
+#include "listrank.h"
+
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainWindow) {
     ui->setupUi(this);
@@ -19,7 +23,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
     connect(socket, &QTcpSocket::readyRead, this, &MainWindow::onReadyRead);
     connect(socket, &QTcpSocket::disconnected, this, &MainWindow::onSocketDisconnected);
     connect(socket, &QAbstractSocket::errorOccurred, this, &MainWindow::onErrorOccurred);
-    socket->connectToHost(QHostAddress::LocalHost, 2209);
+    socket->connectToHost(QHostAddress::LocalHost, 7200);
     if (socket->waitForConnected()) {
         qDebug() << "Connected to Server";
     } else {
@@ -128,6 +132,29 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
             MainWindow::close();
         }
     });
+    connect(ui->btnSurrender, &QPushButton::clicked, this, [this]() {
+        if(socket) {
+            if(socket->isOpen()) {
+                QMessageBox::StandardButton reply;
+                reply = QMessageBox::question(this, "Battleship", "Do you want to surrender?", QMessageBox::Yes | QMessageBox::No);
+                if (reply == QMessageBox::No) {
+                    return;
+                }
+
+                Request request;
+                request.type = REQUEST_SURRENDER;
+                request.user = current;
+                socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+                qDebug() << "REQUEST_SURRENDER sent";
+            } else {
+                QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+                MainWindow::close();
+            }
+        } else {
+            QMessageBox::critical(this, "Battleship", "Not connected");
+            MainWindow::close();
+        }
+    });
     connect(ui->btnShowRank, &QPushButton::clicked, this, [this]() {
         if(socket) {
             if(socket->isOpen()) {
@@ -146,17 +173,39 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
         }
     });
     connect(ui->btnQuickMatch, &QPushButton::clicked, this, [this]() {
-        QMessageBox msg;
-        msg.setText("Watting to find match ...");
-        QTimer time;
-        int cnt = 0;
-        QObject::connect(&time, &QTimer::timeout, [this, &msg, &cnt]() {
-            msg.setText(QString("Wating in %1 seconds ...").arg(cnt++));
-        });
-        time.start(1000);
-        int result = msg.exec();
-        if(result == QMessageBox::Ok || result == QMessageBox::Cancel) {
-            QMessageBox::information(this, "Test", "test");
+        if(socket) {
+            if(socket->isOpen()) {
+                Request request;
+                request.type = REQUEST_QUICK_MATCH;
+                request.user = current;
+                socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+                qDebug() << "REQUEST_QUICK_MATCH sent";
+                quickmatch = true;
+                QMessageBox msg;
+                msg.setText("Watting to find match ...");
+                QTimer time;
+                int cnt = 0;
+                QObject::connect(&time, &QTimer::timeout, [this, &msg, &cnt]() {
+                    if(quickmatch) {
+                        msg.setText(QString("Wating in %1 seconds ...").arg(cnt++));
+                    }else {
+                        msg.close();
+                    }
+                });
+                time.start(1000);
+                int result = msg.exec();
+                if(result == QMessageBox::Ok || result == QMessageBox::Cancel) {
+                    request.type = REQUEST_CANCEL;
+                    socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+                    qDebug() << "REQUEST_CANCEL sent";
+                }
+            }else {
+                 QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+                MainWindow::close();
+            }
+        } else {
+            QMessageBox::critical(this, "Battleship", "Not connected");
+            MainWindow::close();
         }
     });
     connect(ui->chattxt, &QPlainTextEdit::textChanged, this, [this]() {
@@ -197,6 +246,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) , ui(new Ui::MainW
     connect(gameManager, &GameManager::onShipPlaced, this, &MainWindow::shipPlaced);
     connect(gameManager, &GameManager::onShot, this, &MainWindow::shot);
     connect(gameManager, &GameManager::onSetStatus, this, &MainWindow::setStatusText);
+
+    replayManager = new ReplayManager();
+    replayManager->player1Scene = new QGraphicsScene(this);
+    replayManager->player2Scene = new QGraphicsScene(this);
+
+    ui->player1View->setSceneRect(0, 0, BOARD_SIZE * ReplayManager::RECT_SIZE, BOARD_SIZE * ReplayManager::RECT_SIZE);
+    ui->player1View->setScene(replayManager->player1Scene);
+    ui->player2View->setSceneRect(0, 0, BOARD_SIZE * ReplayManager::RECT_SIZE, BOARD_SIZE * ReplayManager::RECT_SIZE);
+    ui->player2View->setScene(replayManager->player2Scene);
+
+    connect(replayManager, &ReplayManager::onSetStatus, this, &MainWindow::setReplayStatusText);
+    connect(replayManager, &ReplayManager::onShotDone, this, &MainWindow::shotDone);
+    connect(ui->btnExit, &QPushButton::clicked, this, [this]() {
+        replayManager->count = 0;
+        ui->stackedWidget->setCurrentWidget(ui->mainPage);
+    });
+    connect(ui->btnNext, &QPushButton::clicked, this, [this]() {
+        ui->btnNext->setEnabled(false);
+        ui->btnPrev->setEnabled(false);
+        replayManager->next();
+    });
+    connect(ui->btnPrev, &QPushButton::clicked, this, [this]() {
+        ui->btnNext->setEnabled(false);
+        ui->btnPrev->setEnabled(false);
+        replayManager->prev();
+    });
 }
 
 MainWindow::~MainWindow() {
@@ -259,6 +334,10 @@ void MainWindow::setStatusText(QString status) {
     ui->txtStatus->setText(status);
 }
 
+void MainWindow::setReplayStatusText(QString status) {
+    ui->txtReplayStatus->setText(status);
+}
+
 void MainWindow::challengeClick(User user) {
     qDebug() << "onChallengeClick():" << user.username << user.elo;
     if(socket) {
@@ -277,6 +356,26 @@ void MainWindow::challengeClick(User user) {
         QMessageBox::critical(this, "Battleship", "Not connected");
         MainWindow::close();
     }
+}
+
+void MainWindow::itemHistoryClick(Match match) {
+    qDebug() << "itemHistoryClick():" << QString::number(match.id) << "|" << QString(match.player1.username) << "|" << QString(match.player2.username);
+    QString init1, init2;
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        init1 += "\t";
+        init2 += "\t";
+        for (int j = 0; j < BOARD_SIZE; j++) {
+            init1 += QString::number(match.init1[i][j]) + " ";
+            init2 += QString::number(match.init2[i][j]) + " ";
+        }
+        init1 += "\n";
+        init2 += "\n";
+    }
+    qDebug().noquote() << init1;
+    qDebug().noquote() << init2;
+
+    this->curMatch = match;
+    getMoves(match);
 }
 
 void MainWindow::notifyChallengeRequest(User user) {
@@ -316,6 +415,22 @@ void MainWindow::updateListWidget(User user) {
 
     ui->listWidget->addItem(item);
     ui->listWidget->setItemWidget(item, widget);
+    ui->listWidget->update();
+}
+
+void MainWindow::updateListWidgetHistory(Match match) {
+    auto item = new QListWidgetItem();
+    item->setSizeHint(QSize(340, 50));
+
+    auto widget = new ItemHistory(this);
+    widget->setData(*item, current, match);
+
+    QObject::connect(widget, &ItemHistory::onClick, this, &MainWindow::itemHistoryClick);
+
+    ui->listWidgetHistory->addItem(item);
+    ui->listWidgetHistory->setItemWidget(item, widget);
+    ui->listWidgetHistory->update();
+    ui->listWidgetHistory->scrollToBottom();
 }
 
 void MainWindow::shipPlaced() {
@@ -342,6 +457,39 @@ void MainWindow::shot(int row, int col) {
     }
 }
 
+void MainWindow::shotDone(int cur, int size) {
+    ui->btnPrev->setEnabled(true);
+    ui->btnNext->setEnabled(true);
+    if (cur == -1) {
+        ui->btnPrev->setEnabled(false);
+    }
+    if (cur == size - 1) {
+        ui->btnNext->setEnabled(false);
+        if (curMatch.winner == 0) {
+            QMessageBox::information(this, "Battleship", QString(curMatch.player1.username) + " win!");
+        } else {
+            QMessageBox::information(this, "Battleship", QString(curMatch.player2.username) + " win!");
+        }
+    }
+}
+
+void MainWindow::showReplayPage(Match match, QList<Move> moves) {
+    ui->btnPrev->setEnabled(false);
+    if (moves.empty()) {
+        ui->btnNext->setEnabled(false);
+    } else {
+        ui->btnNext->setEnabled(true);
+    }
+
+    setReplayStatusText("Ready!!!");
+
+    ui->txtPlayer1->setText(QString(match.player1.username) + "'s board");
+    ui->txtPlayer2->setText(QString(match.player2.username) + "'s board");
+
+    replayManager->init(curMatch, moves);
+    ui->stackedWidget->setCurrentWidget(ui->replayPage);
+}
+
 void MainWindow::getUsers() {
     if(socket) {
         if(socket->isOpen()) {
@@ -350,6 +498,43 @@ void MainWindow::getUsers() {
             request.user = current;
             socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
             qDebug() << "REQUEST_GET_USERS sent";
+        } else {
+            QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+            MainWindow::close();
+        }
+    } else {
+        QMessageBox::critical(this, "Battleship", "Not connected");
+        MainWindow::close();
+    }
+}
+
+void MainWindow::getMatches() {
+    if(socket) {
+        if(socket->isOpen()) {
+            Request request;
+            request.type = REQUEST_GET_MATCHES;
+            request.user = current;
+            socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+            qDebug() << "REQUEST_GET_MATCHES sent";
+        } else {
+            QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
+            MainWindow::close();
+        }
+    } else {
+        QMessageBox::critical(this, "Battleship", "Not connected");
+        MainWindow::close();
+    }
+}
+
+void MainWindow::getMoves(const Match& match) {
+    if(socket) {
+        if(socket->isOpen()) {
+            Request request;
+            request.type = REQUEST_GET_MOVES;
+            request.user = current;
+            request.move.matchID = match.id;
+            socket->write(reinterpret_cast<const char*>(&request), sizeof(request));
+            qDebug() << "REQUEST_GET_MOVES sent";
         } else {
             QMessageBox::critical(this, "Battleship", "Socket doesn't seem to be opened");
             MainWindow::close();
@@ -380,6 +565,14 @@ void MainWindow::handleResponse(QByteArray& bytes) {
 
     case REQUEST_GET_USERS:
         handleGetUsers(response, bytes);
+        break;
+
+    case REQUEST_GET_MATCHES:
+        handleGetMatches(response, bytes);
+        break;
+
+    case REQUEST_GET_MOVES:
+        handleGetMoves(response, bytes);
         break;
 
     case REQUEST_ONLINE:
@@ -414,12 +607,24 @@ void MainWindow::handleResponse(QByteArray& bytes) {
         handleGameOver(response, bytes);
         break;
 
+    case REQUEST_QUIT:
+        handleQuit(response, bytes);
+        break;
+
+    case REQUEST_SURRENDER:
+        handleSurrender(response, bytes);
+        break;
+
     case REQUEST_GET_RANK:
         handleGetRank(response, bytes);
         break;
 
     case REQUEST_CHAT:
         handleChat(response, bytes);
+        break;
+
+    case REQUEST_QUICK_MATCH:
+        handleQuickMatch(response, bytes);
         break;
 
     default:
@@ -437,6 +642,7 @@ void MainWindow::handleSignIn(const Response& response, QByteArray& bytes) {
     this->setWindowTitle("Battleship - " + QString(current.username));
     ui->edtPassword->setText("");
     ui->stackedWidget->setCurrentWidget(ui->mainPage);
+    ui->txtUsername->setText(QString(current.username));
 
     getUsers();
 }
@@ -477,6 +683,60 @@ void MainWindow::handleGetUsers(const Response& response, QByteArray& bytes) {
 
             updateListWidget(user);
         }
+
+        getMatches();
+    } else {
+        QMessageBox::critical(this, "Battleship", response.message);
+        return;
+    }
+}
+
+void MainWindow::handleGetMatches(const Response& response, QByteArray& bytes) {
+    if (response.status == STATUS_OK) {
+        ui->listWidgetHistory->clear();
+
+        size_t size = 0;
+
+        memcpy(&size, bytes.constData(), sizeof(size));
+        bytes = bytes.mid(sizeof(size));
+
+        Match match;
+        for (size_t i = 0; i < size; i++) {
+            memcpy(&match, bytes.constData(), sizeof(match));
+            bytes = bytes.mid(sizeof(match));
+
+            updateListWidgetHistory(match);
+        }
+    } else {
+        QMessageBox::critical(this, "Battleship", response.message);
+        return;
+    }
+}
+
+void MainWindow::handleGetMoves(const Response& response, QByteArray& bytes) {
+    if (response.status == STATUS_OK) {
+        QList<Move> moves;
+
+        size_t size = 0;
+        memcpy(&size, bytes.constData(), sizeof(size));
+        bytes = bytes.mid(sizeof(size));
+
+        for (size_t i = 0; i < size; i++) {
+            Move move;
+            memcpy(&move, bytes.constData(), sizeof(move));
+            bytes = bytes.mid(sizeof(move));
+
+            moves.append(move);
+        }
+
+        for (const Move& move : moves) {
+            qDebug() << move.player << move.row << move.col << move.type;
+        }
+
+        showReplayPage(curMatch, moves);
+    } else {
+        QMessageBox::critical(this, "Battleship", response.message);
+        return;
     }
 }
 
@@ -498,6 +758,7 @@ void MainWindow::handleOffline(const Response& response, QByteArray& bytes) {
                 break;
             }
         }
+        ui->listWidget->update();
     }
 
     qDebug() << "handleOffline():" << (response.user.username + QString(", ") + QString::number(response.user.elo));
@@ -510,8 +771,13 @@ void MainWindow::handleChallenge(const Response& response, QByteArray& bytes) {
     }
 
     if (response.user == current) {
+        gameManager->init();
         ui->stackedWidget->setCurrentWidget(ui->matchPage);
+        ui->btnOk->setVisible(true);
+        ui->btnSurrender->setVisible(false);
         ui->matchPage->setEnabled(false);
+        ui->txtMe->setText(response.user.username);
+        ui->txtEnemy->setText(response.user2.username);
         setStatusText("Waiting for opponent's response request");
     } else {
         notifyChallengeRequest(response.user);
@@ -525,8 +791,12 @@ void MainWindow::handleAccept(const Response& response, QByteArray& bytes) {
     }
 
     if (response.user == current) {
-        ui->stackedWidget->setCurrentWidget(ui->matchPage);
         gameManager->init();
+        ui->stackedWidget->setCurrentWidget(ui->matchPage);
+        ui->btnOk->setVisible(true);
+        ui->btnSurrender->setVisible(false);
+        ui->txtMe->setText(response.user.username);
+        ui->txtEnemy->setText(response.user2.username);
     }
 
     ui->matchPage->setEnabled(true);
@@ -578,9 +848,12 @@ void MainWindow::handleReady(const Response& response, QByteArray& bytes) {
         } else {
             setStatusText("Opponent's turn!");
         }
+
         gameManager->isRunning = true;
         gameManager->myScene->update();
         ui->matchPage->setEnabled(true);
+        ui->btnOk->setVisible(false);
+        ui->btnSurrender->setVisible(true);
     } else if (response.user == current) {
         setStatusText("Waiting opponent...");
         ui->matchPage->setEnabled(false);
@@ -616,8 +889,6 @@ void MainWindow::handleGameOver(const Response& response, QByteArray& bytes) {
     memcpy(&match, bytes.constData(), sizeof(match));
     bytes = bytes.mid(sizeof(match));
 
-    gameManager->isRunning = false;
-
     if ((current == match.player1 && match.winner == 0) || (current == match.player2 && match.winner == 1)) {
         QMessageBox::information(this, "Battleship", "You win!");
     } else {
@@ -629,7 +900,68 @@ void MainWindow::handleGameOver(const Response& response, QByteArray& bytes) {
             gameManager->init();
         }
     }
+
+    gameManager->isRunning = false;
+    gameManager->clear();
+
     ui->stackedWidget->setCurrentWidget(ui->mainPage);
+
+    updateListWidgetHistory(match);
+}
+
+void MainWindow::handleQuit(const Response& response, QByteArray& bytes) {
+    if (response.status != STATUS_OK) {
+        QMessageBox::warning(this, "Battleship", response.message);
+        return;
+    }
+
+    Match match;
+    memcpy(&match, bytes.constData(), sizeof(match));
+    bytes = bytes.mid(sizeof(match));
+
+    if (gameManager->isRunning) {
+        QMessageBox::information(this, "Battleship", "Opponents quit. You win!");
+        updateListWidgetHistory(match);
+    } else {
+        QMessageBox::information(this, "Battleship", "Opponents quit!");
+    }
+
+    gameManager->isRunning = false;
+    gameManager->clear();
+
+    ui->stackedWidget->setCurrentWidget(ui->mainPage);
+
+    for (int i = 0; i < ui->listWidget->count(); i++) {
+        QListWidgetItem* item = ui->listWidget->item(i);
+        ItemUser* widget = dynamic_cast<ItemUser*>(ui->listWidget->itemWidget(item));
+        if (strcmp(widget->getData().username, response.user2.username) == 0) {
+            delete ui->listWidget->takeItem(i);
+            break;
+        }
+    }
+    ui->listWidget->update();
+}
+
+void MainWindow::handleSurrender(const Response& response, QByteArray& bytes) {
+    if (response.status != STATUS_OK) {
+        QMessageBox::warning(this, "Battleship", response.message);
+        return;
+    }
+
+    Match match;
+    memcpy(&match, bytes.constData(), sizeof(match));
+    bytes = bytes.mid(sizeof(match));
+
+    if (gameManager->isRunning && response.user2 == current) {
+        QMessageBox::information(this, "Battleship", "Opponents surrender. You win!");
+    }
+
+    gameManager->isRunning = false;
+    gameManager->clear();
+
+    ui->stackedWidget->setCurrentWidget(ui->mainPage);
+
+    updateListWidgetHistory(match);
 }
 
 void MainWindow::handleGetRank(const Response& response, QByteArray& bytes) {
@@ -664,4 +996,15 @@ void MainWindow::handleChat(const Response& response, QByteArray& bytes) {
     memcpy(&message, bytes.constData(), sizeof(message));
     bytes = bytes.mid(sizeof(message));
     ui->listchat->addItem(QString(message.message));
+}
+
+void MainWindow::handleQuickMatch(const Response& response, QByteArray& bytes) {
+    if(response.status == STATUS_OK) {
+        quickmatch = false;
+        ui->stackedWidget->setCurrentWidget(ui->matchPage);
+        gameManager->init();
+        ui->matchPage->setEnabled(true);
+        ui->btnSurrender->setVisible(false);
+        setStatusText("Placing ships");
+    }
 }

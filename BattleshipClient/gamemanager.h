@@ -20,6 +20,7 @@ public:
     ~GameManager();
 
     void init();
+    void clear();
     void clearShips();
     void myShotDone(CellType type);
     void enemyShot(int row, int col, CellType type);

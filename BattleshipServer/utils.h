@@ -1,6 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <cstdint>
 #include <cstring>
 
 #define BOARD_SIZE 12
@@ -9,7 +10,6 @@ struct User {
     char username[255]{};
     char password[255]{};
     int elo{0};
-    // bool quickmatch{false};
 
     User() = default;
 
@@ -23,6 +23,12 @@ struct User {
     }
 };
 
+struct Message {
+    char message[2048]{};
+
+    Message() = default;
+};
+
 enum CellType {
     CELL_EMPTY,
     CELL_MISS,
@@ -31,6 +37,7 @@ enum CellType {
 };
 
 struct Move {
+    int matchID{};
     int row{};
     int col{};
     int player{};
@@ -40,22 +47,21 @@ struct Move {
 };
 
 struct Match {
+    uint64_t id{};
     User player1{};
     User player2{};
     int status1{};
     int status2{};
     int turn{};
     int winner{};
+    int point1{};
+    int point2{};
     CellType board1[BOARD_SIZE][BOARD_SIZE]{};
     CellType board2[BOARD_SIZE][BOARD_SIZE]{};
+    CellType init1[BOARD_SIZE][BOARD_SIZE]{};
+    CellType init2[BOARD_SIZE][BOARD_SIZE]{};
 
     Match() = default;
-};
-
-struct Message {
-    char message[2048]{};
-
-    Message() = default;
 };
 
 enum RequestType {
@@ -64,6 +70,8 @@ enum RequestType {
     REQUEST_SIGN_IN,
     REQUEST_SIGN_OUT,
     REQUEST_GET_USERS,
+    REQUEST_GET_MATCHES,
+    REQUEST_GET_MOVES,
     REQUEST_ONLINE,
     REQUEST_OFFLINE,
     REQUEST_CHALLENGE,
@@ -72,8 +80,12 @@ enum RequestType {
     REQUEST_READY,
     REQUEST_SHOT,
     REQUEST_GAME_OVER,
+    REQUEST_QUIT,
+    REQUEST_SURRENDER,
     REQUEST_GET_RANK,
-    REQUEST_CHAT
+    REQUEST_CHAT,
+    REQUEST_QUICK_MATCH,
+    REQUEST_CANCEL,
 };
 
 enum Status {

@@ -12,6 +12,7 @@ Ship::Ship(QGraphicsScene* mscene, int id) {
     this->id = id;
     size = size_array[id];
     orient = 0;
+    pressed = false;
     orientation_array[id] = 0;
     setX(id * GameManager::RECT_SIZE);
     setY(0);

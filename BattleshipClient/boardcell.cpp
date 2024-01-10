@@ -13,7 +13,6 @@ QRectF BoardCell::boundingRect() const {
 void BoardCell::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
     QRectF rec = boundingRect();
     QBrush brush(Qt::gray);
-
     if (type == CELL_MISS) {
         brush.setColor(Qt::blue);
     } else if (type == CELL_HIT) {

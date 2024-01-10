@@ -12,23 +12,28 @@ SOURCES += \
     blast.cpp \
     boardcell.cpp \
     gamemanager.cpp \
+    itemhistory.cpp \
     itemuser.cpp \
     listrank.cpp \
     main.cpp \
     mainwindow.cpp \
+    replaymanager.cpp \
     ship.cpp
 
 HEADERS += \
     blast.h \
     boardcell.h \
     gamemanager.h \
+    itemhistory.h \
     itemuser.h \
     listrank.h \
     mainwindow.h \
+    replaymanager.h \
     ship.h \
     utils.h
 
 FORMS += \
+    itemhistory.ui \
     itemuser.ui \
     listrank.ui \
     mainwindow.ui
